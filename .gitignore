@@ -7,3 +7,4 @@ settings.json
 .envrc
 .direnv
 .devenv
+exercises/manual-instrumentation-traces/solution/go/manual-instrumentation-traces

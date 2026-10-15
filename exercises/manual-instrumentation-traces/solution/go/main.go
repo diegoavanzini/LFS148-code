@@ -1,11 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var db UserInterface
@@ -40,16 +46,45 @@ func index(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	currentTime := time.Now().UTC().Format("Mon, 02 Jan 2006 15:04:05")
-	fmt.Fprintf(w, "Hello, World! It's currently %s", currentTime)
+	fmt.Fprintf(w, "Hello, World from GoLang! It's currently %s", currentTime)
 }
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	// Set up OpenTelemetry.
+	otelShutdown, err := setupOTelSDK(ctx)
+
+	// Handle shutdown properly so nothing leaks.
+	defer func() {
+		err = errors.Join(err, otelShutdown(context.Background()))
+	}()
+
 	db = NewChaosClient(NewFakerClient())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /users", getUser)
 	mux.HandleFunc("GET /{$}", index)
+	// Add HTTP instrumentation for the whole server.
+	handler := otelhttp.NewHandler(mux, "/")
 
-	log.Println("listening on 0.0.0.0:5000")
-	log.Fatal(http.ListenAndServe("0.0.0.0:5000", mux))
+	srvErr := make(chan error, 1)
+	go func() {
+		log.Println("listening on 0.0.0.0:5000")
+		srvErr <- http.ListenAndServe("0.0.0.0:5000", handler)
+	}()
+
+	// Wait for interruption.
+	select {
+	case err = <-srvErr:
+		// Error when starting HTTP server.
+		err = errors.Join(err, otelShutdown(context.Background()))
+		return
+	case <-ctx.Done():
+		// Wait for first CTRL+C.
+		// Stop receiving signal notifications as soon as possible.
+		stop()
+	}
+
 }
