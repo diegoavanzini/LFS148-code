@@ -7,8 +7,9 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
-	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
@@ -40,17 +41,11 @@ func setupOTelSDK(ctx context.Context) (func(context.Context) error, error) {
 		handleErr(err)
 		return shutdown, err
 	}
+
 	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
 	otel.SetTracerProvider(tracerProvider)
 
 	return shutdown, err
-}
-
-func newPropagator() propagation.TextMapPropagator {
-	return propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{},
-		propagation.Baggage{},
-	)
 }
 
 func newTracerProvider() (*trace.TracerProvider, error) {
@@ -61,12 +56,19 @@ func newTracerProvider() (*trace.TracerProvider, error) {
 	// Create Batch Span Processor
 	// Uses default settings: 5s delay, 2048 queue, 512 batch size
 	spanProcessor := trace.NewBatchSpanProcessor(consoleExporter)
-
+	resource := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String("manual-instrumentation-traces"),
+		semconv.ServiceVersionKey.String("0.0.1"),
+		semconv.ServiceInstanceIDKey.String("abcdef12345"),
+	)
 	tracerProvider := trace.NewTracerProvider(
 		trace.WithBatcher(consoleExporter,
 			// Default is 5s. Set to 1s for demonstrative purposes.
 			trace.WithBatchTimeout(time.Second)),
+
 		trace.WithSpanProcessor(spanProcessor),
+		trace.WithResource(resource),
 	)
 	return tracerProvider, nil
 }
