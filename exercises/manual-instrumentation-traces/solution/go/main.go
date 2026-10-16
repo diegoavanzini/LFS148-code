@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var db UserInterface
@@ -21,6 +22,10 @@ const name = "github.com/lftraining/LFS148-code/exercises/manual-instrumentation
 func getUser(w http.ResponseWriter, r *http.Request) {
 	_, span := otel.GetTracerProvider().Tracer(name).Start(r.Context(), "getUser")
 	defer span.End()
+	span.SetAttributes(
+		attribute.String("http.request.method", r.Method),
+		attribute.String("url.full", r.URL.Path),
+	)
 	user, status := db.GetUser(123)
 	var data any = map[string]any{}
 	if user != nil {
@@ -33,9 +38,10 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func doStuff() (*http.Response, error) {
-	_, span := otel.GetTracerProvider().Tracer(name).Start(context.Background(), "doStuff")
+func doStuff(ctx context.Context) (*http.Response, error) {
+	_, span := otel.GetTracerProvider().Tracer(name).Start(ctx, "doStuff")
 	defer span.End()
+
 	time.Sleep(100 * time.Millisecond)
 	resp, err := http.Get("http://localhost:6000/")
 	if err != nil {
@@ -46,9 +52,13 @@ func doStuff() (*http.Response, error) {
 }
 
 func index(w http.ResponseWriter, r *http.Request) {
-	_, span := otel.GetTracerProvider().Tracer(name).Start(context.Background(), "index")
+	ctx, span := otel.GetTracerProvider().Tracer(name).Start(r.Context(), "index")
 	defer span.End()
-	if _, err := doStuff(); err != nil {
+	span.SetAttributes(
+		attribute.String("http.request.method", r.Method),
+		attribute.String("url.full", r.URL.Path),
+	)
+	if _, err := doStuff(ctx); err != nil {
 		log.Printf("doStuff: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return

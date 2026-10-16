@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -56,19 +57,31 @@ func newTracerProvider() (*trace.TracerProvider, error) {
 	// Create Batch Span Processor
 	// Uses default settings: 5s delay, 2048 queue, 512 batch size
 	spanProcessor := trace.NewBatchSpanProcessor(consoleExporter)
-	resource := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("manual-instrumentation-traces"),
-		semconv.ServiceVersionKey.String("0.0.1"),
-		semconv.ServiceInstanceIDKey.String("abcdef12345"),
+	res, err := resource.New(
+		context.Background(),
+		resource.WithFromEnv(),      // Discover and provide attributes from OTEL_RESOURCE_ATTRIBUTES and OTEL_SERVICE_NAME environment variables.
+		resource.WithTelemetrySDK(), // Discover and provide information about the OpenTelemetry SDK used.
+		resource.WithProcess(),      // Discover and provide process information.
+		resource.WithOS(),           // Discover and provide OS information.
+		resource.WithContainer(),    // Discover and provide container information.
+		resource.WithHost(),         // Discover and provide host information.
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String("manual-instrumentation-traces"),
+			semconv.ServiceVersionKey.String("0.0.1"),
+			semconv.ServiceInstanceIDKey.String("abcdef12345")), // Add custom resource attributes.
 	)
+	if errors.Is(err, resource.ErrPartialResource) || errors.Is(err, resource.ErrSchemaURLConflict) {
+		log.Println(err) // Log non-fatal issues.
+	} else if err != nil {
+		log.Fatalln(err) // The error may be fatal.
+	}
 	tracerProvider := trace.NewTracerProvider(
 		trace.WithBatcher(consoleExporter,
 			// Default is 5s. Set to 1s for demonstrative purposes.
 			trace.WithBatchTimeout(time.Second)),
 
 		trace.WithSpanProcessor(spanProcessor),
-		trace.WithResource(resource),
+		trace.WithResource(res),
 	)
 	return tracerProvider, nil
 }
