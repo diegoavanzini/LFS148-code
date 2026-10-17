@@ -21,7 +21,9 @@ var db UserInterface
 const name = "github.com/lftraining/LFS148-code/exercises/manual-instrumentation-traces"
 
 func getUser(w http.ResponseWriter, r *http.Request) {
-	_, span := otel.GetTracerProvider().Tracer(name).Start(r.Context(), "users")
+	propagator := otel.GetTextMapPropagator()
+	previous_ctx := propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	_, span := otel.GetTracerProvider().Tracer(name).Start(previous_ctx, "users")
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("http.request.method", r.Method),
