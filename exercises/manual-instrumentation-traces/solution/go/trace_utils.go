@@ -8,6 +8,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
@@ -46,6 +47,8 @@ func setupOTelSDK(ctx context.Context) (func(context.Context) error, error) {
 	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
 	otel.SetTracerProvider(tracerProvider)
 
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
 	return shutdown, err
 }
 
@@ -75,6 +78,7 @@ func newTracerProvider() (*trace.TracerProvider, error) {
 	} else if err != nil {
 		log.Fatalln(err) // The error may be fatal.
 	}
+
 	tracerProvider := trace.NewTracerProvider(
 		trace.WithBatcher(consoleExporter,
 			// Default is 5s. Set to 1s for demonstrative purposes.

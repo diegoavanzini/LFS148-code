@@ -13,6 +13,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 var db UserInterface
@@ -20,7 +21,7 @@ var db UserInterface
 const name = "github.com/lftraining/LFS148-code/exercises/manual-instrumentation-traces"
 
 func getUser(w http.ResponseWriter, r *http.Request) {
-	_, span := otel.GetTracerProvider().Tracer(name).Start(r.Context(), "getUser")
+	_, span := otel.GetTracerProvider().Tracer(name).Start(r.Context(), "users")
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("http.request.method", r.Method),
@@ -39,15 +40,29 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func doStuff(ctx context.Context) (*http.Response, error) {
-	_, span := otel.GetTracerProvider().Tracer(name).Start(ctx, "doStuff")
+	spanCtx, span := otel.GetTracerProvider().Tracer(name).Start(ctx, "doStuff")
 	defer span.End()
 
 	time.Sleep(100 * time.Millisecond)
-	resp, err := http.Get("http://localhost:6000/")
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", "http://localhost:6000/", nil)
+	// Inject trace context into request headers
+	propagator := otel.GetTextMapPropagator()
+	propagator.Inject(spanCtx, propagation.HeaderCarrier(req.Header))
+
+	resp, err := http.DefaultClient.Do(req)
+
+	// resp, err := http.Get("http://localhost:6000/")
 	if err != nil {
 		return nil, err
 	}
 	resp.Body.Close()
+
+	// debug
+	// jsonHeaders, err := json.MarshalIndent(resp.Request.Header, "", " ")
+	log.Printf("Headers included in outbound request: %v", resp.Request.Header)
+	// ...
+
 	return resp, nil
 }
 
@@ -58,6 +73,9 @@ func index(w http.ResponseWriter, r *http.Request) {
 		attribute.String("http.request.method", r.Method),
 		attribute.String("url.full", r.URL.Path),
 	)
+	propagator := otel.GetTextMapPropagator()
+	ctx = propagator.Extract(ctx, propagation.HeaderCarrier(r.Header))
+
 	if _, err := doStuff(ctx); err != nil {
 		log.Printf("doStuff: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
